@@ -2,6 +2,7 @@
 #include <thread>
 #include <atomic>
 #include <string>
+#include <fstream>
 #include "safe_queue.h"
 #include "file_input.h"
 
@@ -22,11 +23,13 @@ public:
 
 private:
     void pushWorkerLoop();
+    void prepareTargetDirectory(const std::string& targetFilePath);
 
     unsigned boardIndex;
     unsigned channelIndex;
     SafeQueue<FramePacketRef>& sendQueue;
     std::string mirrorFilePath;
+    std::ofstream mirrorFile;
 
     std::atomic<bool> isRunning;
     std::thread workerThread;
