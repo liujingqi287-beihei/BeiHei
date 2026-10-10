@@ -1,4 +1,4 @@
-﻿#define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -117,7 +117,7 @@ void runSpeedMonitorProcess(const BoardPush& boardPushRef,
 
         uint64_t currentSentBytes = boardPushRef.getTotalSentBytes();
         uint64_t currentRecvBytes = boardPullRef.getTotalPulledBytes();
-        uint64_t droppedFrames = boardPushRef.getDroppedFrameCount();
+        uint64_t pushDropped = boardPushRef.getDroppedFrameCount();
         uint64_t sentFrames = boardPushRef.getSentFrameCount();
         uint64_t recvFrames = boardPullRef.getTotalPulledFrames();
 
@@ -132,16 +132,45 @@ void runSpeedMonitorProcess(const BoardPush& boardPushRef,
         size_t sendBufCount = toBoardQueue.getQueueSize();
         size_t fileBufCount = fileQueuePtr ? fileQueuePtr->getQueueSize() : 0;
 
-        int64_t droppedFrames = static_cast<int64_t>(sentFrames) - static_cast<int64_t>(recvFrames);
-        if (droppedFrames < 0) droppedFrames = 0;
+        /*int64_t droppedFrames = static_cast<int64_t>(sentFrames) - static_cast<int64_t>(recvFrames);
+        if (droppedFrames < 0) droppedFrames = 0;*/
         int64_t diffBytes = static_cast<int64_t>(currentSentBytes) - static_cast<int64_t>(currentRecvBytes);
 
-        std::cout << "\r[XDMA] 速率: 发 " << std::fixed << std::setprecision(2) << avgSendSpeedGbps << "G / 收 " << avgRecvSpeedGbps << "G | "
+        std::cout << "\r[XDMA]速率: 发 " << std::fixed << std::setprecision(2) << avgSendSpeedGbps << "G / 收 " << avgRecvSpeedGbps << "G | "
             << "累计(发/收): " << std::fixed << std::setprecision(1) << (currentSentBytes / kMegaDivisor) << "MB / " << (currentRecvBytes / kMegaDivisor) << "MB | "
             << "内存堆积: " << sendBufCount << "/" << fileBufCount << " | "
             << "板卡吞包量: " << diffBytes << " B | "
-            << "端到端丢包: " << droppedFrames << " 帧" << std::flush;
+            << "发送丢包: " << pushDropped << " 帧" << std::flush;
     }
+}
+
+static bool performRobustBoardRest(unsigned boardIndex) {
+    auto& xdma = XdmaManager::getInstance();
+    const unsigned kPcieBarRegControl = 0x00000040;
+    const unsigned kPcieBarRegStartRecv = 0x00000100;
+    if (!xdma.writePcieBarRegister(boardIndex, kPcieBarRegStartRecv, 0))
+    {
+        return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    if (!xdma.writePcieBarRegister(boardIndex, kPcieBarRegControl, 0x00FF0001))
+    {
+        return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    if (!xdma.writePcieBarRegister(boardIndex, kPcieBarRegControl, 0x00000000))
+    {
+        return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    unsigned statusVal = 0;
+    if (xdma.readPcieBarRegister(boardIndex, 0x0, statusVal))
+    {
+
+    }
+    return true;
 }
 
 int main(int argc, char* argv[])
@@ -154,9 +183,10 @@ int main(int argc, char* argv[])
     std::string timestampDirName = buildCurrentTimestampString();
     fs::path finalOutputFolderPath = fs::path(config.outputRootDir) / timestampDirName;
     fs::path finalSaveFilePath = finalOutputFolderPath / config.outputFileName;
+    fs::path mirrorSentSaveFilePath = finalOutputFolderPath / "mirror_sent.src";
 
     std::cout << "====================================================\n";
-    std::cout << "   XDMA 高性能基准压测套件 (官方驱动直通版)         \n";
+    std::cout << "   XDMA 高性能基准压测套件                      \n";
     std::cout << "   - 输入源目录: " << config.inputFolderPath << "\n";
     std::cout << "   - 循环发送轮数: " << (config.loopCount == 0 ? "无限循环" : std::to_string(config.loopCount) + " 轮") << "\n";
     std::cout << "   - 帧发送间隔: " << config.delayMs << " ms\n";
@@ -170,10 +200,11 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    std::cout << ">>> 正在对板卡下发软复位指令\n";
-    XdmaManager::getInstance().resetBoard(config.boardIndex);
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    std::cout << ">>> 复位完成\n";
+    if (!performRobustBoardRest(config.boardIndex)) {
+        std::cerr << "复位失败\n";
+    XdmaManager::getInstance().closeBoard(config.boardIndex);
+    return -1;
+    }
 
     SafeQueue<FramePacketRef> toBoardQueue(config.queueCapacity);
     std::unique_ptr<SafeQueue<PacketBlockPtr>> toFileQueue = nullptr;
@@ -183,7 +214,7 @@ int main(int argc, char* argv[])
     }
 
     FileInput fileInputTask(toBoardQueue);
-    BoardPush boardPushTask(config.boardIndex, config.channelIndex, toBoardQueue);
+    BoardPush boardPushTask(config.boardIndex, config.channelIndex, toBoardQueue, mirrorSentSaveFilePath.string());
     BoardPull boardPullTask(config.boardIndex, config.channelIndex,
         toFileQueue ? toFileQueue.get() : nullptr,
         nullptr,
@@ -224,6 +255,7 @@ int main(int argc, char* argv[])
 
     if (fileOutputTask) fileOutputTask->stopWrite();
 
+    XdmaManager::getInstance().writePcieBarRegister(config.boardIndex, 0x00000100, 0);
     XdmaManager::getInstance().closeBoard(config.boardIndex);
     std::cout << "\n\n>>> 传输任务安全终止，全部资源已释放。\n";
     return 0;
