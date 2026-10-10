@@ -3,7 +3,18 @@
 #include <iostream>
 #include <thread>
 #include <immintrin.h>
+#include <filesystem>
+namespace fs = std::filesystem;
 
+void BoardPush::prepareTargetDirectory(const std::string& targetFilePath) {
+    try {
+        fs::path pathObject(targetFilePath);
+        if (pathObject.has_parent_path() && !fs::exists(pathObject.parent_path())) {
+            fs::create_directories(pathObject.parent_path());
+        }
+    }
+    catch (...) {}
+}
 BoardPush::BoardPush(unsigned boardIdx,
     unsigned channelIdx,
     SafeQueue<FramePacketRef>& inputQueue,
@@ -16,14 +27,27 @@ BoardPush::BoardPush(unsigned boardIdx,
     sentFrameCount(0),
     droppedFrameCount(0)
 {
+    // å¦‚æœæŒ‡å®šäº†é•œåƒæ–‡ä»¶è·¯å¾„ï¼Œåˆ™æ‰“å¼€æ–‡ä»¶
+    if (!mirrorFilePath.empty()) {
+        prepareTargetDirectory(mirrorFilePath);
+        mirrorFile.open(mirrorFilePath, std::ios::binary | std::ios::out | std::ios::trunc);
+        if (!mirrorFile.is_open()) {
+            std::cerr << "[BoardPush] åˆ›å»ºå‘é€é•œåƒæ–‡ä»¶å¤±è´¥: " << mirrorFilePath << "\n";
+        }
+    }
+
     if (!XdmaManager::getInstance().openWriteChannel(boardIndex, channelIndex)) {
-        std::cerr << "[BoardPush] ´ò¿ªĞ´Í¨µÀÊ§°Ü! °å¿¨: " << boardIndex << ", Í¨µÀ: " << channelIndex << "\n";
+        std::cerr << "[BoardPush] æ‰“å¼€å†™é€šé“å¤±è´¥! æ¿å¡: " << boardIndex << ", é€šé“: " << channelIndex << "\n";
     }
 }
 
 BoardPush::~BoardPush()
 {
     stopWrite();
+    if (mirrorFile.is_open()) {
+        mirrorFile.flush();
+        mirrorFile.close();
+    }
     XdmaManager::getInstance().closeWriteChannel(boardIndex, channelIndex);
 }
 
@@ -41,6 +65,10 @@ void BoardPush::stopWrite()
     sendQueue.notifyAllWaiters();
     if (workerThread.joinable()) {
         workerThread.join();
+    }
+    if (mirrorFile.is_open())
+    {
+        mirrorFile.flush();
     }
 }
 
@@ -68,10 +96,10 @@ void BoardPush::pushWorkerLoop()
 
                 if (writtenBytes > 0) {
                     bytesSent += static_cast<size_t>(writtenBytes);
-                    backoffCount = 0; // ·¢ËÍ³É¹¦£¬ÖØÖÃÍË±Ü¼ÆÊı
+                    backoffCount = 0; // å‘é€æˆåŠŸï¼Œé‡ç½®é€€é¿è®¡æ•°
                 }
                 else {
-                    // ×ÔÊÊÓ¦ÍË±Ü£ºÓ²¼ş±³Ñ¹Ê±Ìİ¼¶½µÎÂ£¬·ÀÖ¹µ¥ºË CPU 100% ¿Õ×ª
+                    // è‡ªé€‚åº”é€€é¿ï¼šç¡¬ä»¶èƒŒå‹æ—¶æ¢¯çº§é™æ¸©ï¼Œé˜²æ­¢å•æ ¸ CPU 100% ç©ºè½¬
                     backoffCount++;
                     if (backoffCount < 16) {
                         _mm_pause();
@@ -88,6 +116,11 @@ void BoardPush::pushWorkerLoop()
             if (bytesSent == frame.size) {
                 sentFrameCount++;
                 totalSentBytes += frame.size;
+
+                if (mirrorFile.is_open())
+                {
+                    mirrorFile.write(frame.dataPtr, frame.size);
+                }
             }
             else {
                 droppedFrameCount++;
