@@ -1,0 +1,7 @@
+D:\work\XDMARawTester\x64\Release\XDMARawTester.exe
+C:\ljq\网络收发图\5.0\XDMARawTester\XDMARawTester\x64\Release\XDMARawTester.exe
+C:\ljq\XDMATest\5.0\XDMARawTester\XDMARawTester\x64\Release\XDMARawTester.exe
+E:\XDMATest\5.0\XDMARawTester\XDMARawTester\x64\Release\XDMARawTester.exe
+C:\ljq\XDMATest\XDMARawTester\x64\Release\XDMARawTester.exe
+E:\XDMARawTester\x64\Release\XDMARawTester.exe
+E:\XDMARawTester - 副本\x64\Release\XDMARawTester.exe

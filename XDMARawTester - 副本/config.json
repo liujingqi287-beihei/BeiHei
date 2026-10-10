@@ -1,0 +1,14 @@
+{
+  "boardIndex": 0,
+  "channelIndex": 0,
+  "inputFolderPath": "C:/ljq/CS/xl",
+  "outputRootDir": "C:/ljq/CS/cs",
+  "outputFileName": "stream_all_received.dat",
+  "loopCount": 1,
+  "delayMs": 0,
+  "dmaChunkSize": 225280,
+  "queueCapacity": 1000,
+  "netPort": 55555,
+  "enableNetOutput": false,
+  "enableFileOutput": true
+}
