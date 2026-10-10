@@ -147,28 +147,17 @@ void runSpeedMonitorProcess(const BoardPush& boardPushRef,
 static bool performRobustBoardRest(unsigned boardIndex) {
     auto& xdma = XdmaManager::getInstance();
     const unsigned kPcieBarRegControl = 0x00000040;
-    const unsigned kPcieBarRegStartRecv = 0x00000100;
-    if (!xdma.writePcieBarRegister(boardIndex, kPcieBarRegStartRecv, 0))
-    {
-        return false;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
     if (!xdma.writePcieBarRegister(boardIndex, kPcieBarRegControl, 0x00FF0001))
     {
         return false;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    if (!xdma.writePcieBarRegister(boardIndex, kPcieBarRegControl, 0x00000000))
-    {
-        return false;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     unsigned statusVal = 0;
     if (xdma.readPcieBarRegister(boardIndex, 0x0, statusVal))
     {
-
+        std::cout << ">>> [Reset] 板卡回读状态寄存器 0x0 = 0x" 
+                  << std::hex << statusVal << std::dec << "\n";
     }
     return true;
 }
